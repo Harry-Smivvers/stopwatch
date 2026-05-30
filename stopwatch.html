@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stoppuhr</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --surface: #141417;
+    --border: #222228;
+    --accent: #e8ff47;
+    --accent-dim: rgba(232,255,71,0.12);
+    --text: #f0f0f0;
+    --muted: #666672;
+    --danger: #ff4747;
+    --danger-dim: rgba(255,71,71,0.1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    overflow-x: hidden;
+  }
+
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232,255,71,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,255,71,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 520px;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    margin-bottom: 3rem;
+    text-align: center;
+  }
+
+  header h1 {
+    font-size: clamp(1.8rem, 5vw, 2.6rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+
+  header h1 span {
+    color: var(--accent);
+  }
+
+  header p {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 0.5rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* Main clock card */
+  .clock-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2.5rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .clock-card::after {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(232,255,71,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 0.3rem 0.8rem;
+    margin-bottom: 1.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .status-pill.running {
+    color: var(--accent);
+    border-color: rgba(232,255,71,0.3);
+    background: var(--accent-dim);
+  }
+
+  .status-pill .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .status-pill.running .dot {
+    animation: blink 1s infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+
+  .elapsed-display {
+    font-family: 'DM Mono', monospace;
+    font-size: clamp(3rem, 12vw, 5.5rem);
+    font-weight: 300;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--text);
+    margin-bottom: 0.5rem;
+    transition: color 0.3s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .elapsed-display.running {
+    color: var(--accent);
+  }
+
+  .start-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    margin-bottom: 2rem;
+    min-height: 1.2em;
+  }
+
+  .start-label span {
+    color: var(--text);
+  }
+
+  .btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  button {
+    font-family: 'Syne', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border: none;
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  button:active { transform: scale(0.97); }
+
+  #btnStart {
+    background: var(--accent);
+    color: #0d0d0f;
+  }
+
+  #btnStart:hover {
+    background: #f5ff80;
+    box-shadow: 0 0 24px rgba(232,255,71,0.3);
+  }
+
+  #btnStart:disabled {
+    background: var(--border);
+    color: var(--muted);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  #btnStop {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+
+  #btnStop:hover {
+    background: var(--danger-dim);
+    box-shadow: 0 0 20px rgba(255,71,71,0.15);
+  }
+
+  #btnStop:disabled {
+    color: var(--muted);
+    border-color: var(--border);
+    cursor: not-allowed;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* Info cards */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .info-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.2rem 1.4rem;
+  }
+
+  .info-card .label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+
+  .info-card .value {
+    font-family: 'DM Mono', monospace;
+    font-size: 1.2rem;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .info-card.highlight .value {
+    color: var(--accent);
+  }
+
+  /* History */
+  .history-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.4rem;
+  }
+
+  .history-card .section-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 1rem;
+  }
+
+  .history-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 220px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .history-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+  }
+
+  .history-list li .h-time {
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
+
+  .history-list li .h-dur {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .history-empty {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: center;
+    padding: 1.5rem 0;
+    letter-spacing: 0.05em;
+  }
+
+  .clear-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: var(--border);
+    float: right;
+    font-weight: 400;
+  }
+
+  .clear-btn:hover { color: var(--danger); }
+  .clear-btn:active { transform: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>STOPP<span>UHR</span></h1>
+    <p>Zeit messen &amp; speichern</p>
+  </header>
+
+  <div class="clock-card">
+    <div class="status-pill" id="statusPill">
+      <span class="dot"></span>
+      <span id="statusText">Bereit</span>
+    </div>
+
+    <div class="elapsed-display" id="elapsedDisplay">00:00:00</div>
+    <div class="start-label" id="startLabel">Drücke Start um zu beginnen</div>
+
+    <div class="btn-row">
+      <button id="btnStart" onclick="startTimer()">▶ Start</button>
+      <button id="btnStop" onclick="stopTimer()" disabled>■ Stop</button>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <div class="info-card">
+      <div class="label">Letzte Messung</div>
+      <div class="value" id="lastDuration">—</div>
+    </div>
+    <div class="info-card highlight">
+      <div class="label">Heute gesamt</div>
+      <div class="value" id="todayTotal">00:00:00</div>
+    </div>
+  </div>
+
+  <div class="history-card">
+    <div class="section-title">
+      Verlauf heute
+      <button class="clear-btn" onclick="clearHistory()">Löschen</button>
+    </div>
+    <ul class="history-list" id="historyList">
+      <li class="history-empty" id="historyEmpty">Noch keine Messungen heute</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  const KEY_START = 'sw_start';
+  const KEY_HISTORY = 'sw_history';
+
+  let timerInterval = null;
+  let running = false;
+
+  // ── Storage Helpers (localStorage + Cookie Fallback) ────────
+
+  function storageSet(name, value) {
+    const str = JSON.stringify(value);
+    // Always write to BOTH storages so either can recover the other
+    try { localStorage.setItem(name, str); } catch(e) {}
+    try {
+      const d = new Date(); d.setTime(d.getTime() + 7*24*60*60*1000);
+      // Truncate history to last 2 days for cookie (4KB limit)
+      let cookieValue = value;
+      if (name === KEY_HISTORY && typeof value === 'object' && value !== null) {
+        const keys = Object.keys(value).sort().slice(-2);
+        cookieValue = {};
+        keys.forEach(k => { cookieValue[k] = value[k]; });
+      }
+      const cookieStr = JSON.stringify(cookieValue);
+      document.cookie = `${name}=${encodeURIComponent(cookieStr)};expires=${d.toUTCString()};path=/;SameSite=Lax`;
+    } catch(e) {}
+  }
+
+  function storageGet(name) {
+    let lsVal = null;
+    let ckVal = null;
+    try {
+      const v = localStorage.getItem(name);
+      if (v !== null) lsVal = JSON.parse(v);
+    } catch(e) {}
+    try {
+      const match = document.cookie.split('; ').find(r => r.startsWith(name + '='));
+      if (match) ckVal = JSON.parse(decodeURIComponent(match.split('=').slice(1).join('=')));
+    } catch(e) {}
+
+    // For history: merge both sources so no data is lost
+    if (name === KEY_HISTORY) {
+      if (!lsVal && !ckVal) return null;
+      if (!lsVal) return ckVal;
+      if (!ckVal) return lsVal;
+      // Merge: for each day, keep the version with more entries
+      const merged = Object.assign({}, ckVal);
+      Object.keys(lsVal).forEach(day => {
+        if (!merged[day] || lsVal[day].length >= merged[day].length) {
+          merged[day] = lsVal[day];
+        }
+      });
+      return merged;
+    }
+
+    // For other keys (sw_start): prefer localStorage, fall back to cookie
+    if (lsVal !== null) return lsVal;
+    return ckVal;
+  }
+
+  function storageDelete(name) {
+    try { localStorage.removeItem(name); } catch(e) {}
+    try { document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;SameSite=Lax`; } catch(e) {}
+  }
+
+  // ── Time Helpers ────────────────────────────────────────────
+
+  function formatDuration(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+    const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+    const s = String(totalSec % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
+
+  function formatTime(ts) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function todayKey() {
+    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  }
+
+  // ── History ─────────────────────────────────────────────────
+
+  function getHistory() {
+    const all = storageGet(KEY_HISTORY) || {};
+    return all[todayKey()] || [];
+  }
+
+  function saveEntry(startTs, endTs, durationMs) {
+    const all = storageGet(KEY_HISTORY) || {};
+    const key = todayKey();
+    if (!all[key]) all[key] = [];
+    all[key].push({ start: startTs, end: endTs, dur: durationMs });
+    const keys = Object.keys(all).sort();
+    while (keys.length > 7) { delete all[keys.shift()]; }
+    storageSet(KEY_HISTORY, all);
+  }
+
+  function todayTotal() {
+    return getHistory().reduce((sum, e) => sum + e.dur, 0);
+  }
+
+  // ── UI Update ───────────────────────────────────────────────
+
+  function renderHistory() {
+    const list = document.getElementById('historyList');
+    const empty = document.getElementById('historyEmpty');
+    const entries = getHistory();
+
+    if (entries.length === 0) {
+      list.innerHTML = '';
+      const li = document.createElement('li');
+      li.className = 'history-empty';
+      li.id = 'historyEmpty';
+      li.textContent = 'Noch keine Messungen heute';
+      list.appendChild(li);
+      return;
+    }
+
+    list.innerHTML = '';
+    // newest first
+    [...entries].reverse().forEach(e => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <span class="h-time">${formatTime(e.start)} – ${formatTime(e.end)}</span>
+        <span class="h-dur">${formatDuration(e.dur)}</span>
+      `;
+      list.appendChild(li);
+    });
+  }
+
+  function updateInfoCards() {
+    const entries = getHistory();
+    document.getElementById('todayTotal').textContent = formatDuration(todayTotal());
+    if (entries.length > 0) {
+      const last = entries[entries.length - 1];
+      document.getElementById('lastDuration').textContent = formatDuration(last.dur);
+    }
+  }
+
+  // ── Timer Logic ─────────────────────────────────────────────
+
+  function startTimer() {
+    if (running) return;
+
+    const startTs = Date.now();
+    storageSet(KEY_START, startTs);
+    running = true;
+
+    const pill = document.getElementById('statusPill');
+    const statusText = document.getElementById('statusText');
+    const display = document.getElementById('elapsedDisplay');
+    const label = document.getElementById('startLabel');
+
+    pill.classList.add('running');
+    statusText.textContent = 'Läuft';
+    display.classList.add('running');
+    label.innerHTML = `Gestartet um <span>${formatTime(startTs)}</span>`;
+
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStop').disabled = false;
+
+    timerInterval = setInterval(() => {
+      display.textContent = formatDuration(Date.now() - startTs);
+    }, 1000);
+  }
+
+  function stopTimer() {
+    const startTs = storageGet(KEY_START);
+    if (!running && !startTs) return;
+
+    clearInterval(timerInterval);
+    timerInterval = null;
+    running = false;
+
+    const endTs = Date.now();
+    const durationMs = endTs - (startTs || endTs);
+
+    if (startTs) {
+      saveEntry(startTs, endTs, durationMs);
+      storageDelete(KEY_START);
+    }
+
+    const pill = document.getElementById('statusPill');
+    const statusText = document.getElementById('statusText');
+    const display = document.getElementById('elapsedDisplay');
+    const label = document.getElementById('startLabel');
+
+    pill.classList.remove('running');
+    statusText.textContent = 'Gestoppt';
+    display.classList.remove('running');
+    label.innerHTML = `Gestoppt um <span>${formatTime(endTs)}</span>`;
+
+    document.getElementById('btnStart').disabled = false;
+    document.getElementById('btnStop').disabled = true;
+
+    renderHistory();
+    updateInfoCards();
+  }
+
+  function clearHistory() {
+    if (!confirm('Alle gespeicherten Daten löschen?')) return;
+    // Immer den gesamten Verlauf löschen
+    storageDelete(KEY_HISTORY);
+    // Startzeit nur löschen wenn Stoppuhr NICHT läuft
+    if (!running) {
+      storageDelete(KEY_START);
+    }
+    // UI zurücksetzen
+    document.getElementById('lastDuration').textContent = '—';
+    document.getElementById('todayTotal').textContent = '00:00:00';
+    renderHistory();
+  }
+
+  // ── Init ─────────────────────────────────────────────────────
+
+  function init() {
+    const savedStart = storageGet(KEY_START);
+    if (savedStart) {
+      const startTs = savedStart;
+      running = true;
+
+      const pill = document.getElementById('statusPill');
+      const statusText = document.getElementById('statusText');
+      const display = document.getElementById('elapsedDisplay');
+      const label = document.getElementById('startLabel');
+
+      pill.classList.add('running');
+      statusText.textContent = 'Läuft';
+      display.classList.add('running');
+      label.innerHTML = `Gestartet um <span>${formatTime(startTs)}</span>`;
+      document.getElementById('btnStart').disabled = true;
+      document.getElementById('btnStop').disabled = false;
+
+      // Show elapsed time immediately, then update every second
+      display.textContent = formatDuration(Date.now() - startTs);
+      timerInterval = setInterval(() => {
+        display.textContent = formatDuration(Date.now() - startTs);
+      }, 1000);
+    }
+
+    renderHistory();
+    updateInfoCards();
+  }
+
+  init();
+
+  // iOS Safari: when app is killed and reopened, the page may be restored
+  // from bfcache (back/forward cache) without re-running init().
+  // pageshow fires in that case with persisted=true – re-sync the UI.
+  window.addEventListener('pageshow', function(e) {
+    if (e.persisted) {
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+      running = false;
+      document.getElementById('btnStart').disabled = false;
+      document.getElementById('btnStop').disabled = true;
+      document.getElementById('statusPill').classList.remove('running');
+      document.getElementById('statusText').textContent = 'Bereit';
+      document.getElementById('elapsedDisplay').classList.remove('running');
+      document.getElementById('elapsedDisplay').textContent = '00:00:00';
+      document.getElementById('startLabel').textContent = 'Drücke Start um zu beginnen';
+      init();
+    }
+  });
+</script>
+</body>
+</html>
