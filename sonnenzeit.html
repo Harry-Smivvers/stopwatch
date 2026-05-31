@@ -401,6 +401,26 @@
     75% { content: '...'; }
   }
 
+  .version-line {
+    margin-top: 14px;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+
+  .version-line .ver {
+    color: var(--gold);
+    opacity: 0.75;
+  }
+
+  .version-line .sep {
+    opacity: 0.3;
+  }
+
   footer {
     text-align: center;
     margin-top: 60px;
@@ -421,6 +441,7 @@
     <div class="eyebrow">Solar Calculator</div>
     <h1>Sonnen<em>zeit</em></h1>
     <div class="subtitle">Auf- &amp; Untergang · Countdown · Tageslänge</div>
+    <div class="version-line"><span class="ver" id="versionBadge"></span><span class="sep">·</span><span>created by Arry Smivvers Studios</span></div>
   </header>
 
   <div class="search-wrap">
@@ -484,6 +505,12 @@
 </div>
 
 <script>
+const RELEASE_VERSION = '1.0';
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('versionBadge').textContent = 'v' + RELEASE_VERSION;
+});
+
 // ─── SUN POSITION / SUNRISE / SUNSET MATH ────────────────────────────────────
 // Based on Jean Meeus "Astronomical Algorithms" & NOAA Solar Calculator
 
@@ -704,6 +731,7 @@ async function calculate() {
 
     startCountdown();
 
+    localStorage.setItem('sonnenzeit_lastCity', query);
     resultPanel.classList.add('visible');
 
   } catch(err) {
@@ -717,6 +745,15 @@ async function calculate() {
 document.getElementById('cityInput').addEventListener('keydown', e => {
   if(e.key === 'Enter') calculate();
 });
+
+// Auto-load last city from localStorage on page load
+(function() {
+  const last = localStorage.getItem('sonnenzeit_lastCity');
+  if(last) {
+    document.getElementById('cityInput').value = last;
+    calculate();
+  }
+})();
 </script>
 </body>
 </html>
