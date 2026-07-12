@@ -147,7 +147,7 @@
   }
   .city-name {
     font-family: 'Cormorant Garamond', serif;
-    font-size: 2.6rem;
+    font-size: 2.0rem;
     font-weight: 300;
     font-style: italic;
     color: var(--blush);
@@ -439,8 +439,8 @@ function sunTimes(dateLocal, lat, lng, tzOffset) {
   const rise = solarNoon - 4*HA;
   const set  = solarNoon + 4*HA;
   const toHHMM = m => {
-    const total = ((m % 1440) + 1440) % 1440;
-    const h = Math.floor(total/60), min = Math.round(total%60);
+    const total = Math.round(((m % 1440) + 1440) % 1440) % 1440;
+    const h = Math.floor(total/60), min = total%60;
     return `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
   };
   const riseMin = ((rise % 1440) + 1440) % 1440;
