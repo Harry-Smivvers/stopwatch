@@ -394,59 +394,45 @@
 
   // ── Storage Helpers (localStorage + Cookie Fallback) ────────
 
+  // localStorage ist die EINZIGE Quelle der Wahrheit.
+  // Kein Cookie-Fallback mehr: ein fehlgeschlagenes Cookie-Löschen konnte
+  // eine bereits gestoppte Startzeit wieder "auferstehen" lassen.
+
   function storageSet(name, value) {
-    const str = JSON.stringify(value);
-    // Always write to BOTH storages so either can recover the other
-    try { localStorage.setItem(name, str); } catch(e) {}
-    try {
-      const d = new Date(); d.setTime(d.getTime() + 7*24*60*60*1000);
-      // Truncate history to last 2 days for cookie (4KB limit)
-      let cookieValue = value;
-      if (name === KEY_HISTORY && typeof value === 'object' && value !== null) {
-        const keys = Object.keys(value).sort().slice(-2);
-        cookieValue = {};
-        keys.forEach(k => { cookieValue[k] = value[k]; });
-      }
-      const cookieStr = JSON.stringify(cookieValue);
-      document.cookie = `${name}=${encodeURIComponent(cookieStr)};expires=${d.toUTCString()};path=/;SameSite=Lax`;
-    } catch(e) {}
+    try { localStorage.setItem(name, JSON.stringify(value)); } catch(e) {}
   }
 
   function storageGet(name) {
-    let lsVal = null;
-    let ckVal = null;
     try {
       const v = localStorage.getItem(name);
-      if (v !== null) lsVal = JSON.parse(v);
-    } catch(e) {}
-    try {
-      const match = document.cookie.split('; ').find(r => r.startsWith(name + '='));
-      if (match) ckVal = JSON.parse(decodeURIComponent(match.split('=').slice(1).join('=')));
-    } catch(e) {}
-
-    // For history: merge both sources so no data is lost
-    if (name === KEY_HISTORY) {
-      if (!lsVal && !ckVal) return null;
-      if (!lsVal) return ckVal;
-      if (!ckVal) return lsVal;
-      // Merge: for each day, keep the version with more entries
-      const merged = Object.assign({}, ckVal);
-      Object.keys(lsVal).forEach(day => {
-        if (!merged[day] || lsVal[day].length >= merged[day].length) {
-          merged[day] = lsVal[day];
-        }
-      });
-      return merged;
-    }
-
-    // For other keys (sw_start): prefer localStorage, fall back to cookie
-    if (lsVal !== null) return lsVal;
-    return ckVal;
+      if (v === null) return null;
+      return JSON.parse(v);
+    } catch(e) { return null; }
   }
 
   function storageDelete(name) {
     try { localStorage.removeItem(name); } catch(e) {}
-    try { document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;SameSite=Lax`; } catch(e) {}
+  }
+
+  // Startzeit wird NIE gelöscht, sondern explizit auf null gesetzt.
+  // Schreiben ist zuverlässiger als Löschen.
+  function setStart(ts) { storageSet(KEY_START, ts); }
+
+  function getStart() {
+    const v = storageGet(KEY_START);
+    return (typeof v === 'number' && v > 0) ? v : null;
+  }
+
+  function clearStart() { storageSet(KEY_START, null); }
+
+  // Alte Cookies aus früheren Versionen entfernen
+  function purgeLegacyCookies() {
+    try {
+      ['sw_start', 'sw_history'].forEach(n => {
+        document.cookie = `${n}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/`;
+        document.cookie = `${n}=;expires=Thu, 01 Jan 1970 00:00:00 UTC`;
+      });
+    } catch(e) {}
   }
 
   // ── Time Helpers ────────────────────────────────────────────
@@ -464,8 +450,18 @@
     return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 
+  // Lokales Datum (NICHT toISOString – das liefert UTC und verschiebt
+  // Messungen in den frühen Morgenstunden auf den Vortag)
+  function dateKey(ts) {
+    const d = new Date(ts);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   function todayKey() {
-    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    return dateKey(Date.now());
   }
 
   // ── History ─────────────────────────────────────────────────
@@ -477,7 +473,7 @@
 
   function saveEntry(startTs, endTs, durationMs) {
     const all = storageGet(KEY_HISTORY) || {};
-    const key = todayKey();
+    const key = dateKey(endTs);
     if (!all[key]) all[key] = [];
     all[key].push({ start: startTs, end: endTs, dur: durationMs });
     const keys = Object.keys(all).sort();
@@ -533,7 +529,7 @@
     if (running) return;
 
     const startTs = Date.now();
-    storageSet(KEY_START, startTs);
+    setStart(startTs);
     running = true;
 
     const pill = document.getElementById('statusPill');
@@ -555,7 +551,7 @@
   }
 
   function stopTimer() {
-    const startTs = storageGet(KEY_START);
+    const startTs = getStart();
     if (!running && !startTs) return;
 
     clearInterval(timerInterval);
@@ -565,9 +561,13 @@
     const endTs = Date.now();
     const durationMs = endTs - (startTs || endTs);
 
+    // Zuerst den Stopp festschreiben, DANN erst den Verlauf speichern.
+    // Falls das Speichern des Verlaufs fehlschlägt (z.B. Speicher voll),
+    // bleibt die Uhr trotzdem zuverlässig gestoppt.
+    clearStart();
+
     if (startTs) {
       saveEntry(startTs, endTs, durationMs);
-      storageDelete(KEY_START);
     }
 
     const pill = document.getElementById('statusPill');
@@ -591,9 +591,9 @@
     if (!confirm('Alle gespeicherten Daten löschen?')) return;
     // Immer den gesamten Verlauf löschen
     storageDelete(KEY_HISTORY);
-    // Startzeit nur löschen wenn Stoppuhr NICHT läuft
+    // Startzeit nur zurücksetzen wenn Stoppuhr NICHT läuft
     if (!running) {
-      storageDelete(KEY_START);
+      clearStart();
     }
     // UI zurücksetzen
     document.getElementById('lastDuration').textContent = '—';
@@ -604,9 +604,10 @@
   // ── Init ─────────────────────────────────────────────────────
 
   function init() {
-    const savedStart = storageGet(KEY_START);
-    if (savedStart) {
-      const startTs = savedStart;
+    purgeLegacyCookies();
+
+    const startTs = getStart();
+    if (startTs) {
       running = true;
 
       const pill = document.getElementById('statusPill');
@@ -633,24 +634,6 @@
   }
 
   init();
-
-  // iOS Safari: when app is killed and reopened, the page may be restored
-  // from bfcache (back/forward cache) without re-running init().
-  // pageshow fires in that case with persisted=true – re-sync the UI.
-  window.addEventListener('pageshow', function(e) {
-    if (e.persisted) {
-      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-      running = false;
-      document.getElementById('btnStart').disabled = false;
-      document.getElementById('btnStop').disabled = true;
-      document.getElementById('statusPill').classList.remove('running');
-      document.getElementById('statusText').textContent = 'Bereit';
-      document.getElementById('elapsedDisplay').classList.remove('running');
-      document.getElementById('elapsedDisplay').textContent = '00:00:00';
-      document.getElementById('startLabel').textContent = 'Drücke Start um zu beginnen';
-      init();
-    }
-  });
 </script>
 </body>
 </html>
